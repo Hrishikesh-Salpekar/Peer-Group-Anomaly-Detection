@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="The Odd One Out: Anomaly Detection",
+    page_title="Peer-Group Anomaly Detection",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -14,8 +14,8 @@ st.set_page_config(
 # --- Load Data ---
 @st.cache_data
 def load_data():
-    # Load the 3 files
     try:
+        # Load the 3 files
         universe = pd.read_csv('ind_nifty500list.csv')
         # We only really need Symbol and Company Name from the universe file
         universe = universe[['Symbol', 'Company Name']]
@@ -42,7 +42,6 @@ df = load_data()
 
 # --- Sidebar Navigation ---
 st.sidebar.title("🔍 Project Navigation")
-# Update this line in your existing code:
 page = st.sidebar.radio("Go to", ["Executive Summary", "The Watchlist", "Sector Analysis", "Company Deep Dive", "Data Explorer"])
 
 st.sidebar.markdown("---")
@@ -65,9 +64,9 @@ feature_names = {
 # --- PAGE 1: EXECUTIVE SUMMARY ---
 if page == "Executive Summary":
     st.title("📊 Executive Summary")
-    st.markdown("### 'The Odd One Out': Detecting Financial Anomalies with AI")
+    st.markdown("### Peer-Group Anomaly Detection: AI-Driven Forensic Analysis")
     
-    # --- ADDED: Sector Filter ---
+    # Sector Filter
     sectors = ['All'] + sorted(df['Sector'].unique().tolist())
     selected_sector = st.selectbox("Filter Dashboard by Sector:", sectors)
     
@@ -77,12 +76,11 @@ if page == "Executive Summary":
     else:
         summary_df = df
     
-    # Key Metrics (Calculated on filtered data)
+    # Key Metrics
     col1, col2, col3 = st.columns(3)
     total_companies = len(summary_df)
     total_outliers = len(summary_df[summary_df['Status'] == 'Outlier'])
     
-    # Avoid division by zero if a sector has no companies
     if total_companies > 0:
         outlier_pct = (total_outliers / total_companies) * 100
     else:
@@ -98,7 +96,7 @@ if page == "Executive Summary":
     st.subheader(f"Market Map: {selected_sector}")
     st.markdown(
         "This 2D map visualizes the financial similarity between companies. "
-        "**Red dots** are statistically isolated companies ('Outliers')."
+        "**Red dots** are statistically isolated companies ('Outliers') that deviate significantly from their sector peers."
     )
     
     if not summary_df.empty:
@@ -107,7 +105,6 @@ if page == "Executive Summary":
             x='PCA_1', 
             y='PCA_2', 
             color='Status',
-            # Ensure colors stay consistent even if only one group is present
             color_discrete_map={'Normal': '#1f77b4', 'Outlier': '#d62728'},
             hover_name='Company Name',
             hover_data=['Sector', 'Anomaly_Score'],
@@ -131,6 +128,7 @@ elif page == "The Watchlist":
     display_cols = ['Company Name', 'Symbol', 'Sector', 'Anomaly_Score'] + feature_cols
     
     # Formatting the dataframe for display
+    # Note: Requires matplotlib installed for background_gradient
     st.dataframe(
         outliers_df[display_cols].style.background_gradient(subset=feature_cols, cmap='RdYlGn_r', axis=None),
         use_container_width=True,
@@ -139,22 +137,18 @@ elif page == "The Watchlist":
     
     st.caption("**Note:** Ratios are Z-Scores. A value of +2.0 means the company is 2 standard deviations above its sector average. Redder cells indicate more extreme values.")
 
-# --- PAGE: SECTOR ANALYSIS ---
+# --- PAGE 3: SECTOR ANALYSIS ---
 elif page == "Sector Analysis":
     st.title("🏭 Sector-Level Risk Analysis")
     st.markdown("Analyze which industries display the most accounting irregularities and valuation anomalies.")
     
     # 1. League Table: Which sector has the most outliers?
-    # Group by Sector and calculate stats
     sector_stats = df.groupby('Sector').agg(
         Total_Companies=('Symbol', 'count'),
         Outliers=('Status', lambda x: (x == 'Outlier').sum())
     ).reset_index()
     
-    # Calculate Percentage
     sector_stats['Outlier %'] = (sector_stats['Outliers'] / sector_stats['Total_Companies']) * 100
-    
-    # Sort for the chart
     sector_stats = sector_stats.sort_values(by='Outlier %', ascending=False)
     
     col1, col2 = st.columns([2, 1])
@@ -166,7 +160,7 @@ elif page == "Sector Analysis":
             x='Sector', 
             y='Outlier %',
             hover_data=['Total_Companies', 'Outliers'],
-            text='Outliers', # Show count on top of bar
+            text='Outliers', 
             color='Outlier %',
             color_continuous_scale='Reds',
             title="Percentage of Companies Flagged as Outliers"
@@ -184,27 +178,20 @@ elif page == "Sector Analysis":
 
     st.markdown("---")
 
-    # 2. Heatmap: What drives outliers in each sector?
+    # 2. Heatmap
     st.subheader("🔥 What is driving the anomalies?")
-    st.markdown(
-        "This heatmap shows the **average Z-score for flagged outliers** in each sector. "
-        "It reveals the dominant 'risk factor' for that industry (e.g., if the cell is Red, that ratio is typically very high for outliers in that sector)."
-    )
+    st.markdown("This heatmap shows the **average Z-score for flagged outliers** in each sector. Red cells indicate the dominant risk factors.")
     
-    # Filter for outliers only to see what makes them special
     outliers_only = df[df['Status'] == 'Outlier']
     
     if not outliers_only.empty:
-        # Calculate mean of features for outliers in each sector
         heatmap_data = outliers_only.groupby('Sector')[feature_cols].mean()
-        
-        # Rename columns for better readability in the chart
         heatmap_disp = heatmap_data.rename(columns=feature_names)
         
         fig_heat = px.imshow(
             heatmap_disp,
             labels=dict(x="Forensic Ratio", y="Sector", color="Avg Z-Score"),
-            color_continuous_scale='RdBu_r', # Red = High, Blue = Low
+            color_continuous_scale='RdBu_r', 
             aspect="auto",
             title="Average Profile of 'Bad Apples' by Sector"
         )
@@ -212,12 +199,11 @@ elif page == "Sector Analysis":
     else:
         st.info("No outliers found to generate heatmap.")
 
-# --- PAGE 3: COMPANY DEEP DIVE ---
+# --- PAGE 4: COMPANY DEEP DIVE ---
 elif page == "Company Deep Dive":
     st.title("🔎 Company Deep Dive")
     
     # Selector
-    # Create a list of companies, putting outliers first for convenience
     outlier_list = df[df['Status'] == 'Outlier']['Company Name'].tolist()
     normal_list = df[df['Status'] == 'Normal']['Company Name'].tolist()
     all_companies = outlier_list + normal_list
@@ -227,7 +213,6 @@ elif page == "Company Deep Dive":
     # Get Company Data
     company_data = df[df['Company Name'] == selected_company].iloc[0]
     
-    # Layout
     col1, col2 = st.columns([1, 2])
     
     with col1:
@@ -242,16 +227,14 @@ elif page == "Company Deep Dive":
             st.success("✅ CONSIDERED NORMAL")
             
     with col2:
-        # Radar Chart Logic
+        # Radar Chart
         values = [company_data[col] for col in feature_cols]
-        # Close the loop for radar chart
         r_values = values + [values[0]]
         theta_values = [feature_names[col] for col in feature_cols]
         theta = theta_values + [theta_values[0]]
         
         fig_radar = go.Figure()
         
-        # Add the company trace
         fig_radar.add_trace(go.Scatterpolar(
             r=r_values,
             theta=theta,
@@ -260,7 +243,6 @@ elif page == "Company Deep Dive":
             line_color='red' if company_data['Status'] == 'Outlier' else 'blue'
         ))
         
-        # Add a "Normal Range" circle (e.g., Z=0)
         fig_radar.add_trace(go.Scatterpolar(
             r=[0] * len(r_values),
             theta=theta,
@@ -271,20 +253,16 @@ elif page == "Company Deep Dive":
         
         fig_radar.update_layout(
             polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[-3, 3] # Set fixed range for Z-scores for better comparison
-                )
+                radialaxis=dict(visible=True, range=[-3, 3])
             ),
             showlegend=True,
             title=f"Forensic Profile vs Sector Average (Z-Scores)"
         )
         st.plotly_chart(fig_radar, use_container_width=True)
 
-    # Bar Chart for Contribution
+    # Bar Chart
     st.subheader("Feature Deviation Analysis")
     
-    # Prepare data for bar chart
     bar_data = pd.DataFrame({
         'Metric': [feature_names[col] for col in feature_cols],
         'Z-Score': values
@@ -299,17 +277,15 @@ elif page == "Company Deep Dive":
         color_continuous_scale='RdYlGn_r',
         title="Which Ratios are Driving the Anomaly?"
     )
-    # Add vertical lines for +/- 2 SD
     fig_bar.add_vline(x=2, line_dash="dash", line_color="gray", annotation_text="+2 SD")
     fig_bar.add_vline(x=-2, line_dash="dash", line_color="gray", annotation_text="-2 SD")
     
     st.plotly_chart(fig_bar, use_container_width=True)
 
-# --- PAGE 4: DATA EXPLORER ---
+# --- PAGE 5: DATA EXPLORER ---
 elif page == "Data Explorer":
     st.title("📂 Data Explorer")
     
-    # Filter by Sector
     sectors = ['All'] + sorted(df['Sector'].unique().tolist())
     selected_sector = st.selectbox("Filter by Sector:", sectors)
     
@@ -320,7 +296,6 @@ elif page == "Data Explorer":
         
     st.dataframe(display_df)
     
-    # Download Button
     @st.cache_data
     def convert_df(df):
         return df.to_csv(index=False).encode('utf-8')
