@@ -138,7 +138,13 @@ def get_risk_insight(row):
 if page == "Executive Summary":
     st.title("🛡️ Peer-Group Anomaly Detection")
     st.markdown("<h3 style='color:#00F0FF; margin-top:-20px'>AI-Driven Forensic Audit of Indian Equities</h3>", unsafe_allow_html=True)
-    st.info("**🎯 Goal:** Identify companies whose financial ratios deviate significantly from their sector peers.")
+    st.info("""
+    **👋 What is this dashboard?** This tool uses **Unsupervised Machine Learning (Isolation Forests)** to scan the Nifty 500. 
+    It identifies companies whose financial accounting ratios (Accruals, Asset Quality, Valuation) 
+    **deviate significantly** from their sector peers. 
+    
+    **🎯 Goal:** Flag potential accounting irregularities or extreme mispricing for deeper manual investigation.
+    """)
 
     sectors = ['All'] + sorted(df['Sector'].unique().tolist())
     selected_sector = st.selectbox("🌍 Filter View by Sector:", sectors)
@@ -184,122 +190,213 @@ elif page == "The Watchlist":
     st.dataframe(outliers_df[display_cols].style.background_gradient(subset=feature_cols, cmap='RdYlGn_r'), use_container_width=True, height=600)
 
 # ==========================================
-# PAGE 3: SECTOR ANALYSIS
+# PAGE 3: SECTOR ANALYSIS (ENHANCED)
 # ==========================================
 elif page == "Sector Analysis":
     st.title("🏭 Sector Risk Profile")
+    st.markdown("Deep dive into *where* the risks are concentrating and *what* is driving them.")
+    
+    # --- 1. SECTOR LEAGUE TABLE (Existing) ---
     sector_stats = df.groupby('Sector').agg(
-        Total=('Symbol', 'count'), Outliers=('Status', lambda x: (x == 'Outlier').sum())
+        Total=('Symbol', 'count'), 
+        Outliers=('Status', lambda x: (x == 'Outlier').sum())
     ).reset_index()
     sector_stats['Risk %'] = (sector_stats['Outliers'] / sector_stats['Total']) * 100
     sector_stats = sector_stats.sort_values(by='Risk %', ascending=False)
     
-    fig = px.bar(sector_stats, x='Sector', y='Risk %', color='Risk %', color_continuous_scale='Redor', title="Sector Risk Concentration")
-    fig = apply_theme(fig)
-    st.plotly_chart(fig, use_container_width=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        fig_risk = px.bar(
+            sector_stats, x='Sector', y='Risk %', 
+            color='Risk %', color_continuous_scale='Redor', 
+            title="Percentage of Companies Flagged per Sector",
+            text_auto='.1f'
+        )
+        fig_risk = apply_theme(fig_risk)
+        st.plotly_chart(fig_risk, use_container_width=True)
+        
+    with col2:
+        st.caption("Sector Summary Data")
+        st.dataframe(
+            sector_stats[['Sector', 'Outliers', 'Total', 'Risk %']].style.background_gradient(subset=['Risk %'], cmap='Reds'),
+            hide_index=True, 
+            use_container_width=True,
+            height=350
+        )
+
+    st.markdown("---")
+
+    # --- 2. "THE WHY" CHART (New!) ---
+    st.subheader("🧩 The 'Why' Analysis: Drivers of Anomalies")
+    st.markdown("We know *which* sectors have outliers. This chart explains **why** they were flagged.")
+    
+    # Logic to identify primary driver for every outlier
+    outliers_only = df[df['Status'] == 'Outlier'].copy()
+    
+    if not outliers_only.empty:
+        # Function to get the column name of the max Z-score
+        def get_driver(row):
+            return feature_names[row[feature_cols].abs().idxmax()]
+        
+        outliers_only['Primary Driver'] = outliers_only.apply(get_driver, axis=1)
+        
+        # Group by Sector and Driver
+        driver_stats = outliers_only.groupby(['Sector', 'Primary Driver']).size().reset_index(name='Count')
+        
+        fig_stacked = px.bar(
+            driver_stats, 
+            x='Sector', y='Count', color='Primary Driver',
+            title="Breakdown of Anomaly Causes by Sector",
+            color_discrete_sequence=px.colors.qualitative.Pastel,
+            barmode='stack'
+        )
+        fig_stacked = apply_theme(fig_stacked)
+        st.plotly_chart(fig_stacked, use_container_width=True)
+    else:
+        st.info("No outliers found to analyze drivers.")
+
+    # --- 3. "THE SPREAD" CHART (New!) ---
+    st.subheader("📊 Systemic Risk vs. One-Off Events")
+    st.markdown("""
+    * **Tight Box:** The sector is homogeneous (everyone behaves similarly).
+    * **Tall Box / Long Whiskers:** The sector is volatile with varied financial practices.
+    * **Dots far above:** Extreme outliers in an otherwise normal sector.
+    """)
+    
+    # Box plot of Anomaly Scores by Sector
+    fig_box = px.box(
+        df, x='Sector', y='Anomaly_Score', 
+        color='Sector', 
+        points='outliers', # Only show points that are outliers
+        title="Distribution of Anomaly Scores (Volatility check)"
+    )
+    fig_box.update_layout(showlegend=False)
+    fig_box = apply_theme(fig_box)
+    st.plotly_chart(fig_box, use_container_width=True)
 
 # ==========================================
-# PAGE 4: DEEP DIVE (UPDATED)
+# PAGE 4: DEEP DIVE (SMART ANALYTICS)
 # ==========================================
 elif page == "Company Deep Dive":
     st.title("🔎 Forensic Deep Dive")
     
-    # Sort outliers to top
+    # 1. Company Selector (Outliers First)
     comps = df[df['Status']=='Outlier']['Company Name'].tolist() + df[df['Status']=='Normal']['Company Name'].tolist()
     sel_comp = st.selectbox("Select Company:", comps)
     
+    # Get Data
     row = df[df['Company Name'] == sel_comp].iloc[0]
+    symbol = row['Symbol']
+    symbol = str(symbol+".NS")    
+
+    # --- 2. KPI HEADER (Clean & Professional) ---
+    # Calculate Primary Risk Driver
+    vals = row[feature_cols]
+    max_col = vals.abs().idxmax() # e.g., 'TATA_Z'
+    max_val = vals[max_col]       # e.g., 2.5
+    driver_name = feature_names[max_col]
     
-    # --- 1. SMART INSIGHT BANNER ---
-    st.subheader("Diagnostic Report")
-    max_col, max_val, narrative = get_risk_insight(row)
-    
-    if row['Status'] == 'Outlier':
-        st.error(f"⚠️ **FLAGGED AS ANOMALY** (Score: {row['Anomaly_Score']:.3f})")
-        st.markdown(f"""
-        <div style="background-color: #262730; padding: 15px; border-radius: 5px; border-left: 5px solid #FF2B2B;">
-            <h4 style="margin:0">Primary Risk Driver: {feature_names[max_col]}</h4>
-            <p style="font-size: 16px; margin-top: 5px;">
-            <b>Observation:</b> Z-Score is <b>{max_val:.2f}</b> (Standard Deviations from Mean).<br>
-            <b>Insight:</b> {narrative}
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.success(f"✅ **NORMAL** (Score: {row['Anomaly_Score']:.3f})")
-        st.info(f"The company's financial profile is consistent with sector peers. The most deviant metric is {feature_names[max_col]} (Z={max_val:.2f}), which is within acceptable limits.")
+    # KPI Row
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("Sector", row['Sector'])
+    kpi2.metric("Anomaly Score", f"{row['Anomaly_Score']:.3f}", delta="Lower is Better" if row['Status']=='Normal' else "High Risk", delta_color="inverse")
+    kpi3.metric("Primary Risk Driver", driver_name)
+    kpi4.metric("Deviation Level", f"{max_val:.1f} σ", help="Standard Deviations from Sector Mean")
 
     st.markdown("---")
     
-    # --- 2. FORENSIC CHARTS ---
-    col1, col2 = st.columns(2)
+    # --- 3. DYNAMIC INSIGHT & HISTORICAL EVIDENCE ---
+    col_insight, col_chart = st.columns([1, 2])
     
+    # Prepare Historical Data for this company
+    comp_hist = pd.DataFrame()
+    if not hist_df.empty:
+        comp_hist = hist_df[hist_df['Symbol'] == symbol].sort_values(by='Year')
+
+    with col_insight:
+        st.subheader("📝 Forensic Insight")
+        
+        # Define logic for the "Insight" text and "Evidence" metrics based on the Risk Driver
+        if max_col == 'TATA_Z': # Accruals
+            st.warning(f"**High Accruals Detected.** {sel_comp} is reporting profits that are not backed by operating cash flow.")
+            if not comp_hist.empty:
+                latest = comp_hist.iloc[-1]
+                st.metric("Latest Net Income", f"₹{latest['Net Income']/1e7:.1f} Cr")
+                st.metric("Latest OCF", f"₹{latest['OCF']/1e7:.1f} Cr", delta=f"Gap: {(latest['OCF']-latest['Net Income'])/1e7:.1f} Cr", delta_color="off")
+        
+        elif max_col == 'DSRI_Z': # Receivables
+            st.warning(f"**Aggressive Revenue Recognition?** Receivables are growing significantly faster than Sales.")
+            if not comp_hist.empty:
+                latest = comp_hist.iloc[-1]
+                prev = comp_hist.iloc[-2] if len(comp_hist) > 1 else latest
+                
+                rev_growth = ((latest['Revenue'] - prev['Revenue']) / prev['Revenue']) * 100
+                rec_growth = ((latest['Receivables'] - prev['Receivables']) / prev['Receivables']) * 100 if 'Receivables' in latest else 0
+                
+                st.metric("Revenue Growth (YoY)", f"{rev_growth:.1f}%")
+                st.metric("Receivables Growth (YoY)", f"{rec_growth:.1f}%", delta=f"Excess: {rec_growth-rev_growth:.1f}%", delta_color="inverse")
+
+        elif max_col == 'DuPont_Discrepancy_Z': # ROE / Growth
+            st.warning(f"**DuPont Mismatch.** The ROE being reported may be unsustainable given the equity base.")
+            if not comp_hist.empty and 'Total Equity' in comp_hist.columns:
+                latest = comp_hist.iloc[-1]
+                roe = (latest['Net Income'] / latest['Total Equity']) * 100
+                st.metric("Return on Equity (ROE)", f"{roe:.1f}%")
+                st.metric("Equity Base", f"₹{latest['Total Equity']/1e7:.1f} Cr")
+
+        else: # Default/Other
+            st.info(f"The primary deviation is in **{driver_name}**. This warrants a review of the company's valuation or asset structure relative to peers.")
+
+    with col_chart:
+        st.subheader("📉 Supporting Evidence (Trend)")
+        
+        if not comp_hist.empty:
+            # DYNAMIC CHART SELECTION
+            if max_col == 'TATA_Z':
+                # Plot Income vs Cash Flow (The classic Accrual check)
+                fig = px.bar(comp_hist, x='Year', y=['Net Income', 'OCF'], barmode='group',
+                             title="Earnings Quality: Profit (Blue) vs Cash (Red)",
+                             color_discrete_map={'Net Income': '#00F0FF', 'OCF': '#FF2B2B'})
+            
+            elif max_col == 'DSRI_Z' and 'Receivables' in comp_hist.columns:
+                # Plot Revenue vs Receivables (Normalized or dual axis ideally, but line chart works)
+                fig = px.line(comp_hist, x='Year', y=['Revenue', 'Receivables'], markers=True,
+                              title="Revenue vs Receivables Growth",
+                              color_discrete_sequence=['#00F0FF', '#FFD700'])
+            
+            elif max_col == 'DuPont_Discrepancy_Z' and 'Total Equity' in comp_hist.columns:
+                # Plot ROE Components
+                fig = px.line(comp_hist, x='Year', y=['Net Income', 'Total Equity'], markers=True,
+                              title="ROE Components: Income vs Equity Base",
+                              color_discrete_sequence=['#00F0FF', '#00FF00'])
+                
+            else:
+                # Default Chart (Revenue vs Profit)
+                fig = px.line(comp_hist, x='Year', y=['Revenue', 'Net Income'], markers=True,
+                              title="General Financial Performance",
+                              color_discrete_sequence=['#00F0FF', '#FFD700'])
+            
+            fig = apply_theme(fig)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No historical data available to plot the specific anomaly trend.")
+
+    # --- 4. THE RADAR SCAN (Kept for completeness) ---
+    st.markdown("### 🕸️ Full Forensic Fingerprint")
     vals = [row[c] for c in feature_cols]
     vals += [vals[0]]
     thetas = [feature_names[c] for c in feature_cols]
     thetas += [thetas[0]]
     
-    with col1:
-        fig_radar = go.Figure()
-        fig_radar.add_trace(go.Scatterpolar(
-            r=vals, theta=thetas, fill='toself', name=sel_comp,
-            line_color=colors['outlier'] if row['Status']=='Outlier' else colors['normal']
-        ))
-        fig_radar.add_trace(go.Scatterpolar(r=[0]*len(vals), theta=thetas, name='Sector Avg', line=dict(color='gray', dash='dash')))
-        fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[-3, 3])), title="Forensic Fingerprint")
-        fig_radar = apply_theme(fig_radar)
-        st.plotly_chart(fig_radar, use_container_width=True)
-
-    with col2:
-        bar_df = pd.DataFrame({'Metric': [feature_names[c] for c in feature_cols], 'Z-Score': vals[:-1]})
-        fig_bar = px.bar(
-            bar_df, y='Metric', x='Z-Score', orientation='h',
-            color='Z-Score', color_continuous_scale='RdYlGn_r',
-            title="Deviation from Sector Mean"
-        )
-        fig_bar.add_vline(x=2, line_dash="dash", line_color="white")
-        fig_bar.add_vline(x=-2, line_dash="dash", line_color="white")
-        fig_bar = apply_theme(fig_bar)
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    # --- 3. HISTORICAL DATA (DYNAMIC) ---
-    st.subheader("📈 Historical Financial Trend")
-    
-    if not hist_df.empty:
-        # Match Symbol from Main Data to Ticker in Historical Data
-        # Ensure we check for both "RELIANCE" and "RELIANCE.NS" style matches if needed
-        # For now, we assume strict matching based on your universe file
-        symbol = row['Symbol']
-        
-        # Try finding the symbol in the historical data
-        comp_hist = hist_df[hist_df['Symbol'] == symbol].sort_values(by='Year')
-        
-        if not comp_hist.empty:
-            col_h1, col_h2 = st.columns(2)
-            
-            with col_h1:
-                # Plot Revenue vs Net Income
-                # We need to make sure the columns exist and are numeric
-                if 'Revenue' in comp_hist.columns and 'Net Income' in comp_hist.columns:
-                     fig_trend = px.line(comp_hist, x='Year', y=['Revenue', 'Net Income'], markers=True, 
-                                        title="Revenue vs Net Income (Historical)", 
-                                        color_discrete_sequence=['#00F0FF', '#FFD700'])
-                     fig_trend = apply_theme(fig_trend)
-                     st.plotly_chart(fig_trend, use_container_width=True)
-            
-            with col_h2:
-                # Plot OCF Trend
-                if 'OCF' in comp_hist.columns:
-                    fig_ocf = px.bar(comp_hist, x='Year', y='OCF', 
-                                    title="Operating Cash Flow Trend", 
-                                    color_discrete_sequence=['#00FF00'])
-                    fig_ocf = apply_theme(fig_ocf)
-                    st.plotly_chart(fig_ocf, use_container_width=True)
-        else:
-            st.warning(f"No historical data found for {symbol} in the uploaded file.")
-            st.caption(f"Available tickers in file: {', '.join(hist_df['Symbol'].unique()[:5])}...")
-    else:
-        st.info("💡 **Want to see charts?** Upload a file named `nifty500_financials_test.csv` (or similar) with columns like 'Ticker', 'Total Revenue', etc.")
+    fig_radar = go.Figure()
+    fig_radar.add_trace(go.Scatterpolar(
+        r=vals, theta=thetas, fill='toself', name=sel_comp,
+        line_color=colors['outlier'] if row['Status']=='Outlier' else colors['normal']
+    ))
+    fig_radar.add_trace(go.Scatterpolar(r=[0]*len(vals), theta=thetas, name='Sector Avg', line=dict(color='gray', dash='dash')))
+    fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[-3, 3])), title=f"{sel_comp} vs Sector Norms")
+    fig_radar = apply_theme(fig_radar)
+    st.plotly_chart(fig_radar, use_container_width=True)
 
 # ==========================================
 # PAGE 5: DATA EXPLORER
