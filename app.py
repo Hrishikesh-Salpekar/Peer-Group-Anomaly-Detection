@@ -2,6 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import os
+
+# --- DEBUGGING: PRINT FILE LIST ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📂 Server File Check")
+st.sidebar.code("\n".join(os.listdir()))
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -405,3 +411,4 @@ elif page == "Data Explorer":
     st.title("📂 Data Explorer")
 
     st.dataframe(df)
+
