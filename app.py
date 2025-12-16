@@ -403,4 +403,5 @@ elif page == "Company Deep Dive":
 # ==========================================
 elif page == "Data Explorer":
     st.title("📂 Data Explorer")
+
     st.dataframe(df)
