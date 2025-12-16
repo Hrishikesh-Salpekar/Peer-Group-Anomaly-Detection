@@ -70,7 +70,7 @@ feature_names = {
 }
 
 # ==========================================
-# PAGE 1: EXECUTIVE SUMMARY (REDESIGNED)
+# PAGE 1: EXECUTIVE SUMMARY (FIXED)
 # ==========================================
 if page == "Executive Summary":
     # 1. Header & Mission Statement
@@ -96,9 +96,9 @@ if page == "Executive Summary":
         selected_sector = st.selectbox("🌍 Filter View by Sector:", sectors)
 
     if selected_sector != 'All':
-        summary_df = df[df['Sector'] == selected_sector]
+        summary_df = df[df['Sector'] == selected_sector].copy() # Added .copy() to avoid warnings
     else:
-        summary_df = df
+        summary_df = df.copy()
 
     # 3. High-Impact Metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -126,13 +126,17 @@ if page == "Executive Summary":
         """, unsafe_allow_html=True)
 
     if not summary_df.empty:
+        # --- THE FIX IS HERE ---
+        # Create a new column for size that is always positive
+        summary_df['Plot_Size'] = summary_df['Anomaly_Score'].abs()
+        
         fig_pca = px.scatter(
             summary_df, x='PCA_1', y='PCA_2',
             color='Status',
             color_discrete_map={'Normal': colors['normal'], 'Outlier': colors['outlier']},
             hover_name='Company Name',
             hover_data=['Sector', 'Anomaly_Score'],
-            size='Anomaly_Score', # Bigger score = Bigger dot
+            size='Plot_Size',   # <--- Updated to use the positive column
             size_max=15,
             opacity=0.8,
             title=f"Cluster Analysis: {selected_sector}"
@@ -268,4 +272,5 @@ elif page == "Company Deep Dive":
 # ==========================================
 elif page == "Data Explorer":
     st.title("📂 Data Explorer")
+
     st.dataframe(df)
